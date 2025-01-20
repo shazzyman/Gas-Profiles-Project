@@ -1,15 +1,17 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import pysr
-
-pysr.install(precompile=False)
+pysr.install(precompile=False)  # Ensures PySR installs dependencies
 
 import sympy
 import numpy as np
 from matplotlib import pyplot as plt
 from pysr import PySRRegressor
 from sklearn.model_selection import train_test_split
-import Vik_density_compare as Vik
+import Vik_density_compare as Vik  
+
+# **Setup Instructions:**
+# 1. Install Julia: Ensure Julia is installed and accessible from your terminal.
+# 2. Install PySR: Install using `pip install pysr`.
+# 3. Ensure any required Python libraries (numpy, matplotlib, sklearn) are installed.
 
 # power_operator = {
 #     "pow": (lambda x, y: np.power(x, y), 2),
