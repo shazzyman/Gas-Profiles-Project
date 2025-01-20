@@ -12,126 +12,144 @@ import Vik_density_compare as Vik_rho
 import pickle
 import os
 
-#SIMULATION DEFINITIONS
-#====================================================================================
+# SIMULATION DEFINITIONS
+# ====================================================================================
+# This section initializes simulation data for TNG100 and TNG300 gas profiles and defines
+# functions for calculating normalized gas density profiles.
 
+# Load gas profile data from TNG100 and TNG300 HDF5 files
 gasprofs100_v5_filename = 'groups_gasprofs_v5_tng100_099.hdf5'
 gasprofs100_v5_vals = h5py.File(gasprofs100_v5_filename, 'r', libver='earliest', swmr=True)
 
 gasprofs300_v5_filename = 'groups_gasprofs_v5_tng300_099.hdf5'
 gasprofs300_v5_vals = h5py.File(gasprofs300_v5_filename, 'r', libver='earliest', swmr=True)
 
-
+# Define the critical density of the universe in kpc^-3
 rho_crit = constants.RHO_CRIT_0_KPC3
 
-#CLUSTER DICTIONARY (CLUSTER NAME, Z, R500)
+# Define a dictionary of galaxy clusters with their name, redshift (z), and R500 radius (in kpc)
+cluster_dict = {
+    'A133': ('A133', 0.0569, 1007),
+    'A262': ('A262', 0.0162, 650),
+    'A383': ('A383', 0.1883, 944),
+    'A478': ('A478', 0.0881, 1337),
+    'A907': ('A907', 0.1603, 1096),
+    'A1413': ('A1413', 0.1429, 1299),
+    'A1795': ('A1795', 0.0622, 1235),
+    'A1991': ('A1991', 0.0592, 732),
+    'A2029': ('A2029', 0.0779, 1362),
+    'A2390': ('A2390', 0.2302, 1416),
+    'RX': ('RX J1159+5531', 0.0810, 700),
+    'MKW 4': ('MKW 4', 0.0199, 634),
+    'USGC S152': ('USGC S152', 0.0153, None)
+}
 
-
-cluster_dict = {'A133': ('A133', 0.0569, 1007),
-                'A262': ('A262', 0.0162 , 650),
-                'A383': ('A383', 0.1883, 944),
-                'A478': ('A478', 0.0881, 1337),
-                'A907': ('A907', 0.1603, 1096),
-                'A1413':('A1413', 0.1429, 1299),
-                'A1795':('A1795', 0.0622, 1235),
-                'A1991':('A1991', 0.0592, 732),
-                'A2029':('A2029', 0.0779, 1362),
-                'A2390':('A2390', 0.2302, 1416),
-                'RX':('RX J1159+5531', 0.0810, 700),
-                'MKW 4':('MKW 4', 0.0199, 634),
-                'USGC S152':('USGC S152', 0.0153, None)
-        }
-
+# Select clusters for specific analyses
 clusters = ['A2390', 'A133']
 
-Vik_Cosmo = cosmology.setCosmology('Vik_Cosmo', params = cosmology.cosmologies['planck18'], Om0 = 0.3, Ode0=0.7, H0 = 72, sigma8 = 0.9)
+# Initialize a custom cosmology with Planck 2018 parameters
+Vik_Cosmo = cosmology.setCosmology(
+    'Vik_Cosmo',
+    params=cosmology.cosmologies['planck18'],
+    Om0=0.3,
+    Ode0=0.7,
+    H0=72,
+    sigma8=0.9
+)
 print(Vik_Cosmo)
 
-gamma=3
+# Define constants
+gamma = 3  # Slope parameter for gas density profiles
+mp = constants.M_PROTON  # Proton mass
+G = constants.G  # Gravitational constant
+G_CGS = constants.G_CGS  # Gravitational constant in CGS units
 
-mp = constants.M_PROTON
-
-G = constants.G
-
-G_CGS = constants.G_CGS
-
+# Define a function to calculate normalized gas density profiles
 def get_rho_norm(r, n0, rc, rs, a, B, epsilon, n02, rc2, B2):
-    npne = ((n0*(10**-3))**2)*(((r/rc)**(-a))/((1+(r**2)/(rc**2))**(3*B + (-a/2))))* \
-        (1/((1+((r**gamma)/(rs**gamma)))**(epsilon/gamma))) \
-            + (((n02*(10**-1))**2)/ ((1 + (r**2)/(rc2**2))**(3*B2)))
-
-            
-    rho_g = 1.624 * mp * (npne)**(1/2)
+    # Compute electron and proton number densities
+    npne = (
+        ((n0 * (10**-3))**2)
+        * (((r / rc)**(-a)) / ((1 + (r**2) / (rc**2))**(3 * B + (-a / 2))))
+        * (1 / ((1 + ((r**gamma) / (rs**gamma)))**(epsilon / gamma)))
+        + (((n02 * (10**-1))**2) / ((1 + (r**2) / (rc2**2))**(3 * B2)))
+    )
+    # Convert to gas density
+    rho_g = 1.624 * mp * (npne)**(1 / 2)
     
-    #rho_c_ill = mycosmo.rho_c(0.2302) * (constants.MSUN)*(.677**2)/(constants.KPC**3)
-    
-    H_col = Vik_Cosmo.Hz(z)
-    
-    h_col = H_col * (10 ** (-2))
-    
-    rho_c_col = Vik_Cosmo.rho_c(z) * (constants.MSUN)*((h_col)**2)/(constants.KPC**3)
-    
-    rho_norm_col = rho_g/rho_c_col #* 100
-    
-    
+    # Calculate normalized density using critical density
+    H_col = Vik_Cosmo.Hz(z)  # Hubble parameter at redshift z
+    h_col = H_col * (10**-2)  # Reduced Hubble parameter
+    rho_c_col = Vik_Cosmo.rho_c(z) * (constants.MSUN) * (h_col**2) / (constants.KPC**3)
+    rho_norm_col = rho_g / rho_c_col
     return rho_g, rho_norm_col
 
+# Define a function to calculate normalized density for fitting purposes
 def get_rho_norm_fit(r, n0, rc, rs, a, B, epsilon, n02, rc2, B2):
-    npne = ((n0*(10**-3))**2)*(((r/rc)**(-a))/((1+(r**2)/(rc**2))**(3*B + (-a/2))))* \
-        (1/((1+((r**gamma)/(rs**gamma)))**(epsilon/gamma))) \
-            + (((n02*(10**-1))**2)/ ((1 + (r**2)/(rc2**2))**(3*B2)))
-
-            
-    rho_g = 1.624 * mp * (npne)**(1/2)
-    
-    #rho_c_ill = mycosmo.rho_c(0.2302) * (constants.MSUN)*(.677**2)/(constants.KPC**3)
-    
+    # Similar to get_rho_norm but optimized for fitting
+    npne = (
+        ((n0 * (10**-3))**2)
+        * (((r / rc)**(-a)) / ((1 + (r**2) / (rc**2))**(3 * B + (-a / 2))))
+        * (1 / ((1 + ((r**gamma) / (rs**gamma)))**(epsilon / gamma)))
+        + (((n02 * (10**-1))**2) / ((1 + (r**2) / (rc2**2))**(3 * B2)))
+    )
+    rho_g = 1.624 * mp * (npne)**(1 / 2)
     H_col = Vik_Cosmo.Hz(z)
-    
-    h_col = H_col * (10 ** (-2))
-    
-    rho_c_col = Vik_Cosmo.rho_c(z) * (constants.MSUN)*((h_col)**2)/(constants.KPC**3)
-    
-    rho_norm_col = rho_g/rho_c_col #* 100
-    
-    
+    h_col = H_col * (10**-2)
+    rho_c_col = Vik_Cosmo.rho_c(z) * (constants.MSUN) * (h_col**2) / (constants.KPC**3)
+    rho_norm_col = rho_g / rho_c_col
     return rho_norm_col
 
+# Extract and normalize radii and gas density values for TNG100
 radii_all100 = np.array(gasprofs100_v5_vals['profile_bins'])
 R_Crit500_100 = np.array(gasprofs100_v5_vals['catgrp_Group_R_Crit500'])
+radii_all100_norm = radii_all100 / R_Crit500_100[:, None]
 
-radii_all100_norm = radii_all100/R_Crit500_100[:,None]
-
+# Calculate midpoints for normalized radii in TNG100
 radii_all100_norm_mid = (radii_all100_norm[:-1] + radii_all100_norm[1:]) / 2.0
 first_bin_midpoint = radii_all100_norm[0] / 2.0
 radii_all100_norm_mid = np.insert(radii_all100_norm_mid, 0, first_bin_midpoint)
 
-              
 rho_vals100 = np.array(gasprofs100_v5_vals['profile_gas_rho_3d'])
-rho_vals100_norm = rho_vals100/rho_crit
+rho_vals100_norm = rho_vals100 / rho_crit
 
+# Extract and normalize radii and gas density values for TNG300
 radii_all300 = np.array(gasprofs300_v5_vals['profile_bins'])
 R_Crit500_300 = np.array(gasprofs300_v5_vals['catgrp_Group_R_Crit500'])
+radii_all300_norm = radii_all300 / R_Crit500_300[:, None]
 
-radii_all300_norm = radii_all300/R_Crit500_300[:,None]
-
+# Calculate midpoints for normalized radii in TNG300
 radii_all300_norm_mid = (radii_all300_norm[:-1] + radii_all300_norm[1:]) / 2.0
 first_bin_midpoint = radii_all300_norm[0] / 2.0
 radii_all300_norm_mid = np.insert(radii_all300_norm_mid, 0, first_bin_midpoint)
 
 rho_vals300 = np.array(gasprofs300_v5_vals['profile_gas_rho_3d'])
-rho_vals300_norm = rho_vals300/rho_crit
+rho_vals300_norm = rho_vals300 / rho_crit
 
+# Interpolated density values (pre-computed)
 rho_vals_interp100 = Vik_rho.rho_vals_interp100
 rho_vals_interp300 = Vik_rho.rho_vals_interp300
 
-#EXTRACT CLUSTER OBSERVATION DATA + PLUG AND CHUG
-#====================================================================================
 
-Vik_bins = np.linspace(78, 23400, 500) #Minimum and maximum radial bins in both  TNG 100 and 300
+# EXTRACT CLUSTER OBSERVATION DATA + PLUG AND CHUG
+# ====================================================================================
+# Define radial bins for analysis
+# These bins span the minimum and maximum radial distances observed in TNG 100 and 300 simulations
+Vik_bins = np.linspace(78, 23400, 500)
 
-n0, rc, rs, a, B, epsilon, n02, rc2, B2 = np.loadtxt('Vikhlinin_tab2.csv', skiprows = 0, unpack=True, delimiter = ',', usecols=(0,1,2,3,4,5,6,7,8))
-                                                                 
+# Load parameters for the Vikhlinin density profile model from a CSV file
+# These parameters define the gas density profiles of galaxy clusters
+n0, rc, rs, a, B, epsilon, n02, rc2, B2 = np.loadtxt(
+    'Vikhlinin_tab2.csv',
+    skiprows=False,
+    unpack=True,
+    delimiter=',',
+    usecols=(0, 1, 2, 3, 4, 5, 6, 7, 8)
+)
+
+# Extract data and compute density profiles for individual clusters
+# The redshift (z) for each cluster is retrieved from the cluster_dict, and the density 
+# profiles (gas density and normalized density) are calculated using the get_rho_norm function.
+
 z=cluster_dict['A133'][1]
 rho_g_A133, rho_norm_Vik_A133 = get_rho_norm(Vik_bins, n0[0], rc[0], rs[0], a[0], B[0], epsilon[0], n02[0], rc2[0], B2[0])
 
@@ -167,7 +185,10 @@ rho_g_RX, rho_norm_Vik_RX = get_rho_norm(Vik_bins, n0[10], rc[10], rs[10], a[10]
 
 z=cluster_dict['MKW 4'][1]
 rho_g_MKW, rho_norm_Vik_MKW = get_rho_norm(Vik_bins, n0[11], rc[11], rs[11], a[11], B[11], epsilon[11], n02[11], rc2[11], B2[11])
-#emis_profile_USGC = get_rho_norm(Vik_bins, n0[12], rc[12], rs[12], a[12], B[12], epsilon[12], n02[12], rc2[12], B2[12])
+
+# Uncomment the following line to calculate the emission profile for the USGC S152 cluster
+# emis_profile_USGC = get_rho_norm(Vik_bins, n0[12], rc[12], rs[12], a[12], B[12], epsilon[12], n02[12], rc2[12], B2[12])
+
 
 
 m_radii_norm_A133 = Vik_bins/cluster_dict['A133'][2]
@@ -184,16 +205,21 @@ m_radii_norm_RX = Vik_bins/cluster_dict['RX'][2]
 m_radii_norm_MKW = Vik_bins/cluster_dict['MKW 4'][2]
 
 
-#FITTING PARAMETERS ( For Median and Individual clusters)
-#====================================================================================
+# FITTING PARAMETERS (For Median and Individual Clusters)
+# ====================================================================================
+# This section involves fitting gas density profiles to the data from TNG100 and TNG300
+# and calculating ratios, chi-squared statistics, and saving results for further analysis.
+
+# Define bounds for curve fitting parameters
 bounds = [[0.1, 0, 200, 0.05, 0.1, 0.1, 0, 0, 0], [35, 1000, 3000, 3, 2, 5, 6, 100, 4]]
 
-
+# Load precomputed median density profiles and bin centers
 median_rho_100 = Vik_rho.median_rho_100
 my_bins100_centers = Vik_rho.my_bins100_centers
 median_rho_300 = Vik_rho.median_rho_300
 my_bins300_centers = Vik_rho.my_bins300_centers
 
+# Mask NaN values for clean fitting
 nan_mask = ~np.isnan(median_rho_100)
 median_rho_100_red = median_rho_100[nan_mask]
 my_bins100_centers_red = my_bins100_centers[nan_mask]
@@ -202,175 +228,157 @@ nan_mask = ~np.isnan(median_rho_300)
 median_rho_300_red = median_rho_300[nan_mask]
 my_bins300_centers_red = my_bins300_centers[nan_mask]
 
-
-
+# Extend the bin centers by adding lower bins for extrapolation
 my_bins100_centers_red_2x = my_bins100_centers_red[:28]
 my_bins300_centers_red_2x = my_bins300_centers_red[:28]
 
-bin_1_100 = my_bins100_centers_red_2x[0]/8
-bin_1_300 = my_bins300_centers_red_2x[0]/8
-bin_2_100 = my_bins100_centers_red_2x[0]/4
-bin_2_300 = my_bins300_centers_red_2x[0]/4
-bin_3_100 = my_bins100_centers_red_2x[0]/2
-bin_3_300 = my_bins300_centers_red_2x[0]/2
+bin_1_100 = my_bins100_centers_red_2x[0] / 8
+bin_1_300 = my_bins300_centers_red_2x[0] / 8
+bin_2_100 = my_bins100_centers_red_2x[0] / 4
+bin_2_300 = my_bins300_centers_red_2x[0] / 4
+bin_3_100 = my_bins100_centers_red_2x[0] / 2
+bin_3_300 = my_bins300_centers_red_2x[0] / 2
 
-my_bins100_centers_red_2x_ex = np.insert(my_bins100_centers_red_2x, 0,[bin_1_100, bin_2_100, bin_3_100])
-my_bins300_centers_red_2x_ex = np.insert(my_bins300_centers_red_2x, 0,[bin_1_300, bin_2_300, bin_3_300])
+my_bins100_centers_red_2x_ex = np.insert(my_bins100_centers_red_2x, 0, [bin_1_100, bin_2_100, bin_3_100])
+my_bins300_centers_red_2x_ex = np.insert(my_bins300_centers_red_2x, 0, [bin_1_300, bin_2_300, bin_3_300])
 
-median_rho_100_red_2x = median_rho_100_red[:28]
-median_rho_300_red_2x = median_rho_300_red[:28]
+# Perform curve fitting for TNG100 and TNG300
+popt100_p1, pcov100 = curve_fit(get_rho_norm_fit, my_bins100_centers_red_2x, median_rho_100_red[:28], bounds=bounds)
+popt300_p1, pcov300 = curve_fit(get_rho_norm_fit, my_bins300_centers_red_2x, median_rho_300_red[:28], bounds=bounds)
 
-popt100_p1, pcov100 = curve_fit(get_rho_norm_fit, my_bins100_centers_red_2x, median_rho_100_red_2x, bounds=bounds)
-popt300_p1, pcov300 = curve_fit(get_rho_norm_fit, my_bins300_centers_red_2x, median_rho_300_red_2x, bounds=bounds)
-
-
+# Display fitting parameters in a formatted table
 col_names = ["n0, rc, rs, a, B, epsilon, n02, rc2, B2"]
-
-param_table_1 = [[popt100_p1],
-          [popt300_p1]]
-
-
-
+param_table_1 = [[popt100_p1], [popt300_p1]]
 print(tabulate(param_table_1, headers=col_names[:], tablefmt='fancy_grid'))
 
+# Generate the curve fit results
+curve_fit_result100_p1 = get_rho_norm_fit(my_bins100_centers_red_2x, *popt100_p1)
+curve_fit_result300_p1 = get_rho_norm_fit(my_bins300_centers_red_2x, *popt300_p1)
 
-curve_fit_result100_p1 = get_rho_norm_fit(my_bins100_centers_red_2x, popt100_p1[0], popt100_p1[1], popt100_p1[2], popt100_p1[3], popt100_p1[4], popt100_p1[5], popt100_p1[6], popt100_p1[7], popt100_p1[8])
-curve_fit_result300_p1 = get_rho_norm_fit(my_bins300_centers_red_2x, popt300_p1[0], popt300_p1[1], popt300_p1[2], popt300_p1[3], popt300_p1[4], popt300_p1[5], popt300_p1[6], popt300_p1[7], popt300_p1[8])
+curve_fit_result100_p1_ex = get_rho_norm_fit(my_bins100_centers_red_2x_ex, *popt100_p1)
+curve_fit_result300_p1_ex = get_rho_norm_fit(my_bins300_centers_red_2x_ex, *popt300_p1)
 
-curve_fit_result100_p1_ex = get_rho_norm_fit(my_bins100_centers_red_2x_ex, popt100_p1[0], popt100_p1[1], popt100_p1[2], popt100_p1[3], popt100_p1[4], popt100_p1[5], popt100_p1[6], popt100_p1[7], popt100_p1[8])
-curve_fit_result300_p1_ex = get_rho_norm_fit(my_bins300_centers_red_2x_ex, popt300_p1[0], popt300_p1[1], popt300_p1[2], popt300_p1[3], popt300_p1[4], popt300_p1[5], popt300_p1[6], popt300_p1[7], popt300_p1[8])
+# Calculate simulation-to-fit ratios
+TNG100_sim_ratio = curve_fit_result100_p1 / median_rho_100_red[:28]
+TNG300_sim_ratio = curve_fit_result300_p1 / median_rho_300_red[:28]
 
-TNG100_sim_ratio = curve_fit_result100_p1 / median_rho_100_red_2x
-TNG300_sim_ratio = curve_fit_result300_p1 / median_rho_300_red_2x
-
-
-    
+# Determine indices where the radius exceeds 0.5 R500
 twor500_index_array100 = np.zeros(100, dtype=int)
-for j in range(0,100):
-    for i in range(0, 50):
-        if radii_all100_norm[j,i] >= 0.5:
+for j in range(100):
+    for i in range(50):
+        if radii_all100_norm[j, i] >= 0.5:
             twor500_index_array100 = np.append(twor500_index_array100, i)
             break
 twor500_index_array100 = twor500_index_array100[100:]
 
-
-
 twor500_index_array300 = np.zeros(100, dtype=int)
-for j in range(0,100):
-    for i in range(0, 50):
-        if radii_all300_norm[j,i] >= 0.5:
+for j in range(100):
+    for i in range(50):
+        if radii_all300_norm[j, i] >= 0.5:
             twor500_index_array300 = np.append(twor500_index_array300, i)
             break
 twor500_index_array300 = twor500_index_array300[100:]
 
 
 
-#CREATE PICKLE FIKE LOOP 
-#====================================================================================
+# Save fitting results in pickle files
+# ====================================================================================
 folder_path = '/Users/shazaliaudu/Downloads/Gas_Profiles_Project'
 pickle_file_name100 = 'TNG100_fit_1.7.pkl'
 pickle_file_name300 = 'TNG300_fit_1.7.pkl'
 
-
 pickle_file_path100 = folder_path + pickle_file_name100
-
 pickle_file_path300 = folder_path + pickle_file_name300
 
+# Load or create TNG100 fitting results
 if os.path.exists(pickle_file_path100):
     with open(pickle_file_path100, 'rb') as file:
         ac_fits100 = pickle.load(file)
-    print("Loaded data from TNG100 pickle file succesfully")
-    
+    print("Loaded data from TNG100 pickle file successfully")
 else:
     ac_fits100 = [[] for _ in range(100)]
-    for j in range(0, 100):
+    for j in range(100):
         i = twor500_index_array100[j]
         popt100, cov100 = curve_fit(get_rho_norm_fit, radii_all100_norm[j, :i], rho_vals100_norm[j, :i], bounds=bounds)
         ac_fits100[j] = np.append(ac_fits100[j], popt100)
-
     with open(pickle_file_path100, 'wb') as file:
         pickle.dump(ac_fits100, file)
     print("Saved data to TNG100 pickle file.")
-    
+
+# Load or create TNG300 fitting results
 if os.path.exists(pickle_file_path300):
     with open(pickle_file_path300, 'rb') as file:
         ac_fits300 = pickle.load(file)
-    print("Loaded data from TNG300 pickle file ssuccesfully")
-    
-else:   
+    print("Loaded data from TNG300 pickle file successfully")
+else:
     ac_fits300 = [[] for _ in range(100)]
-    for j in range(0, 100):
+    for j in range(100):
         i = twor500_index_array300[j]
         popt300, cov300 = curve_fit(get_rho_norm_fit, radii_all300_norm[j, :i], rho_vals300_norm[j, :i], bounds=bounds)
         ac_fits300[j] = np.append(ac_fits300[j], popt300)
-
     with open(pickle_file_path300, 'wb') as file:
         pickle.dump(ac_fits300, file)
     print("Saved data to TNG300 pickle file.")
 
+# Generate fitted curves and calculate ratios
+# ====================================================================================
 ac_curve100 = [[] for _ in range(len(ac_fits100))]
 for j in range(len(ac_fits100)):
-        i = twor500_index_array100[j]
-        curve100 = get_rho_norm_fit(radii_all100_norm[j,:i], ac_fits100[j][0], ac_fits100[j][1], ac_fits100[j][2], ac_fits100[j][3], ac_fits100[j][4], ac_fits100[j][5], ac_fits100[j][6], ac_fits100[j][7], ac_fits100[j][8])
-        ac_curve100[j] = np.append(ac_curve100[j], curve100)
+    i = twor500_index_array100[j]
+    curve100 = get_rho_norm_fit(radii_all100_norm[j, :i], *ac_fits100[j])
+    ac_curve100[j] = np.append(ac_curve100[j], curve100)
 
 ac_curve300 = [[] for _ in range(len(ac_fits300))]
 for j in range(len(ac_fits300)):
     i = twor500_index_array300[j]
-    curve300 = get_rho_norm_fit(radii_all300_norm[j,:i], ac_fits300[j][0], ac_fits300[j][1], ac_fits300[j][2], ac_fits300[j][3], ac_fits300[j][4], ac_fits300[j][5], ac_fits300[j][6], ac_fits300[j][7], ac_fits300[j][8])
+    curve300 = get_rho_norm_fit(radii_all300_norm[j, :i], *ac_fits300[j])
     ac_curve300[j] = np.append(ac_curve300[j], curve300)
-    
 
+# Calculate TNG simulation-to-fit ratios
 TNG_100_ratio_arr = [[] for _ in range(100)]
 for j in range(len(ac_fits100)):
     i = twor500_index_array100[j]
     TNG_100_ratio = ac_curve100[j] / rho_vals100_norm[j, :i]
     TNG_100_ratio_arr[j] = np.append(TNG_100_ratio_arr[j], TNG_100_ratio)
-    
+
 TNG_300_ratio_arr = [[] for _ in range(100)]
 for j in range(len(ac_fits300)):
     i = twor500_index_array300[j]
     TNG_300_ratio = ac_curve300[j] / rho_vals300_norm[j, :i]
     TNG_300_ratio_arr[j] = np.append(TNG_300_ratio_arr[j], TNG_300_ratio)
 
-    
-
-#CHI SQUARED
-#===================================================================================
+# CHI-SQUARED CALCULATIONS
+# ====================================================================================
+# Define chi-squared calculation function
 def chi_squared(rho_fit, rho_sim, num_o_bins, num_o_param):
     deg_o_free = num_o_bins - num_o_param
-    
     num = abs(rho_fit - rho_sim)
-    chi_square_res = (np.log10(num))/(deg_o_free)
-    
+    chi_square_res = (np.log10(num)) / deg_o_free
     return chi_square_res
 
-        
+# Calculate chi-squared for TNG100
 chi_square_res_arr100 = [[] for _ in range(100)]
 sus_clus_arr100 = [[] for _ in range(100)]
-
 for j in range(len(rho_vals100_norm)):
     i = twor500_index_array100[j]
     chi_square_res = chi_squared(rho_vals100_norm[j, :i], ac_curve100[j], len(rho_vals100_norm[j, :i]), 9)
     chi_square_res_arr100[j] = np.append(chi_square_res_arr100[j], chi_square_res)
-    
     if np.any(chi_square_res_arr100[j] >= 0.05):
         sus_clus_arr100[j] = np.append(sus_clus_arr100[j], j)
 sus_clus_arr100 = [element for subarray in sus_clus_arr100 for element in subarray if subarray]
 
-
+# Calculate chi-squared for TNG300
 chi_square_res_arr300 = [[] for _ in range(100)]
 sus_clus_arr300 = [[] for _ in range(100)]
-
 for j in range(len(rho_vals300_norm)):
     i = twor500_index_array300[j]
     chi_square_res = chi_squared(rho_vals300_norm[j, :i], ac_curve300[j], len(rho_vals300_norm[j, :i]), 9)
     chi_square_res_arr300[j] = np.append(chi_square_res_arr300[j], chi_square_res)
-    
     if np.any(chi_square_res_arr300[j] >= 0.05):
         sus_clus_arr300[j] = np.append(sus_clus_arr300[j], j)
-
 sus_clus_arr300 = [element for subarray in sus_clus_arr300 for element in subarray if subarray]
+
+# Extract parameters for clusters passing chi-squared tests
 
 n0_ac100 = [ac_fits100[i][0] for i in range(100) if i not in sus_clus_arr100]
 rc_ac100 = [ac_fits100[i][1] for i in range(100) if i not in sus_clus_arr100]
@@ -392,8 +400,12 @@ n02_ac300 = [ac_fits300[i][6] for i in range(100) if i not in sus_clus_arr300]
 rc2_ac300 = [ac_fits300[i][7] for i in range(100) if i not in sus_clus_arr300]
 B2_ac300 = [ac_fits300[i][8] for i in range(100) if i not in sus_clus_arr300]
 
-#PARAMTER COMPARISON
-#====================================================================================
+
+
+# PARAMETER COMPARISON
+# ====================================================================================
+# This section explores the effect of varying different parameters in the gas density model
+# and observes how these variations impact the gas density profiles.
 
 z=cluster_dict['A133'][1]
 
