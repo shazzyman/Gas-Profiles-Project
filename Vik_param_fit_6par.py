@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+## This code does the exact same thing as Vik_param_fit code, however only performs the fit for 6 of the paramters.
+
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
